@@ -7,11 +7,12 @@ public class Player_Movement : MonoBehaviour
    
     #region Inspector Tab
 
-    [Header("Referances ---------------------------------------------------------------------------------------")]
+    [Header("References ---------------------------------------------------------------------------------------")]
     [Space]
     [SerializeField] private Player_Data_SO Player_Data_SO;
     [SerializeField] private Rigidbody2D Player_Rigidbody;
     [SerializeField] private Collider2D Player_Collider;
+    [SerializeField] private Player_Animator_Manager Player_Animator_Manager;
     [Space]
     [Header("Movement_Settings --------------------------------------------------------------------------------")]
     [Space]
@@ -25,6 +26,10 @@ public class Player_Movement : MonoBehaviour
     [SerializeField] private float Player_Dash_Distance = 5f;
     [SerializeField] private float Player_Dash_Duration = 0.2f;
     [SerializeField] private float Player_Dash_Cooldown = 1f;
+    [Space]
+    [Header("Animation_Settings -------------------------------------------------------------------------------")]
+    [Space]
+    [SerializeField] private float Movement_Threshold = 0.1f;
     [Space]
     [Header("Debug --------------------------------------------------------------------------------------------")]
     [Space]
@@ -44,6 +49,7 @@ public class Player_Movement : MonoBehaviour
 
     public float Current_Dash_Cooldown { get; private set; }
     public bool Is_Dashing { get; private set; }
+    public bool Is_Walking { get; private set; }
 
     #endregion
 
@@ -55,6 +61,7 @@ public class Player_Movement : MonoBehaviour
     private Vector2 Current_Velocity;
     private Vector2 Target_Velocity;
     private Vector2 Dash_Direction;
+    private Vector2 Last_Movement_Direction;
     private float Dash_Cooldown_Timer;
 
     #endregion
@@ -76,6 +83,13 @@ public class Player_Movement : MonoBehaviour
         {
             Player_Collider = GetComponent<Collider2D>();
         }
+
+        if(Player_Animator_Manager == null)
+        {
+            Player_Animator_Manager = GetComponent<Player_Animator_Manager>();
+        }
+
+        Last_Movement_Direction = Vector2.right;
     }
 
     void Update()
@@ -89,21 +103,21 @@ public class Player_Movement : MonoBehaviour
         {
             Attempt_Dash();
         }
-        
-        // Runtime data'yı SO'ya kaydet
+
         if(Input.GetKeyDown(Save_Current_Data_To_SO))
         {
             Save_Runtime_Data_To_SO();
         }
         
-        // Cooldown timer'ı güncelle
         if(Dash_Cooldown_Timer > 0)
         {
             Dash_Cooldown_Timer -= Time.deltaTime;
         }
         
-        // UI için public property güncelle
         Current_Dash_Cooldown = Mathf.Max(0, Dash_Cooldown_Timer);
+
+        Update_Animation_States();
+        Update_Player_Direction();
     }
 
     void FixedUpdate()
@@ -161,16 +175,47 @@ public class Player_Movement : MonoBehaviour
         Player_Rigidbody.linearVelocity = Current_Velocity;
     }
 
+    private void Update_Animation_States()
+    {
+        if(Player_Animator_Manager == null) return;
+
+        bool was_Walking = Is_Walking;
+        Is_Walking = Current_Velocity.magnitude > Movement_Threshold && !Is_Dashing;
+
+        if(was_Walking != Is_Walking)
+        {
+            Player_Animator_Manager.SetBool("Is_Walking", Is_Walking);
+        }
+    }
+
+    private void Update_Player_Direction()
+    {
+        if(Movement_Input.magnitude > 0.1f)
+        {
+            Last_Movement_Direction = Movement_Input;
+
+            if(Movement_Input.x > 0)
+            {
+                transform.localScale = new Vector3(1, 1, 1);
+            }
+            else if(Movement_Input.x < 0)
+            {
+                transform.localScale = new Vector3(-1, 1, 1);
+            }
+        }
+    }
+
     private void Attempt_Dash()
     {
         if(Is_Dashing || Dash_Cooldown_Timer > 0) return;
+        
         if(Movement_Input.magnitude > 0.1f)
         {
             Dash_Direction = Movement_Input.normalized;
         }
         else
         {
-            Dash_Direction = Vector2.right;
+            Dash_Direction = Last_Movement_Direction.normalized;
         }
         
         StartCoroutine(Perform_Dash());
@@ -180,6 +225,12 @@ public class Player_Movement : MonoBehaviour
     {
         Is_Dashing = true;
         Dash_Cooldown_Timer = Player_Dash_Cooldown;
+        
+        if(Player_Animator_Manager != null)
+        {
+            Player_Animator_Manager.SetBool("Is_Dashing", true);
+            Player_Animator_Manager.SetBool("Is_Walking", false);
+        }
         
         if(Player_Collider != null)
         {
@@ -207,6 +258,11 @@ public class Player_Movement : MonoBehaviour
         if(Player_Collider != null)
         {
             Player_Collider.enabled = true;
+        }
+        
+        if(Player_Animator_Manager != null)
+        {
+            Player_Animator_Manager.SetBool("Is_Dashing", false);
         }
         
         Is_Dashing = false;
