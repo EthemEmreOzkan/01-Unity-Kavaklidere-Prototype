@@ -19,4 +19,12 @@ MonoBehaviour:
   Player_Dash_Distance: 5
   Player_Dash_Duration: 0.2
   Player_Dash_Cooldown: 1
+  Projectile_Damage: 10
+  Projectile_Recoil_Force: 2
+  Projectile_Speed: 15
+  Attack_Cooldown: 0.5
+  Projectile_Lifetime: 3
+  Recoil_Force: 0.5
+  Recoil_Duration: 0.15
+  Recoil_Smooth_Speed: 10
   Player_Health: 100

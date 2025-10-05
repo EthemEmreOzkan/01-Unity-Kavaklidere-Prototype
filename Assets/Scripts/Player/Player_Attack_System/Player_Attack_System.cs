@@ -27,17 +27,10 @@ public class Player_Attack_System : MonoBehaviour
     [SerializeField] private float Player_Projectile_Speed = 15f;
     [SerializeField] private float Player_Projectile_Lifetime = 3f;
     [SerializeField] private int Player_Initial_Pool_Size = 10;
-    //TODO BURAYI BAĞLA
-    //[SerializeField] private float Player_Projectile_Damage = 10;
-    //[SerializeField] private float Player_Projectile_Recoil_Force = 2;
     [Space]
     [Header("Debug --------------------------------------------------------------------------------------------")]
     [Space]
     [SerializeField] private bool Show_Debug_Gizmos = true;
-    [Space]
-    [Header("SO_Data_Save -------------------------------------------------------------------------------------")]
-    [Space]
-    //[SerializeField] private KeyCode Save_Current_Data_To_SO = KeyCode.F5;
 
     #endregion
 
@@ -113,38 +106,57 @@ public class Player_Attack_System : MonoBehaviour
 
     private void Update_Mouse_Position()
     {
-        Mouse_World_Position = Main_Camera.ScreenToWorldPoint(Input.mousePosition);
+        if(Main_Camera == null) return;
+
+        Vector3 mouse_Screen_Pos = Input.mousePosition;
+
+        // Ekran sınırları içinde mi kontrol et
+        if(mouse_Screen_Pos.x < 0 || mouse_Screen_Pos.x > Screen.width || 
+           mouse_Screen_Pos.y < 0 || mouse_Screen_Pos.y > Screen.height)
+        {
+            return; // Ekran dışındaysa önceki pozisyonu koru
+        }
+
+        // Z değerini kamera tipine göre ayarla
+        mouse_Screen_Pos.z = Main_Camera.orthographic ? 
+            Main_Camera.nearClipPlane : 
+            Mathf.Abs(Main_Camera.transform.position.z - transform.position.z);
+
+        Vector2 world_Pos = Main_Camera.ScreenToWorldPoint(mouse_Screen_Pos);
+
+        // Geçerli pozisyon kontrolü
+        if(!float.IsInfinity(world_Pos.x) && !float.IsInfinity(world_Pos.y) && 
+           !float.IsNaN(world_Pos.x) && !float.IsNaN(world_Pos.y))
+        {
+            Mouse_World_Position = world_Pos;
+        }
     }
 
-private void Update_Wand_Position_And_Rotation()
-{
-    if(Player_Wand_Transform == null) return;
+    private void Update_Wand_Position_And_Rotation()
+    {
+        if(Player_Wand_Transform == null) return;
 
-    Vector2 player_Position = transform.position;
-    Vector2 direction_To_Mouse = (Mouse_World_Position - player_Position).normalized;
+        Vector2 player_Position = transform.position;
+        Vector2 direction_To_Mouse = (Mouse_World_Position - player_Position).normalized;
 
-    // Pozisyonu hesapla
-    Player_Wand_Transform.position = player_Position + (direction_To_Mouse * Wand_Offset_From_Player.magnitude);
+        // Geçersiz yön kontrolü
+        if(float.IsNaN(direction_To_Mouse.x) || float.IsNaN(direction_To_Mouse.y))
+        {
+            direction_To_Mouse = Vector2.right;
+        }
 
-    // Dikey (dik açı) rotasyon
-    float angle = Mathf.Atan2(direction_To_Mouse.y, direction_To_Mouse.x) * Mathf.Rad2Deg;
+        // Pozisyonu hesapla
+        Player_Wand_Transform.position = player_Position + (direction_To_Mouse * Wand_Offset_From_Player.magnitude);
 
-    // Her zaman 90 derece dik olacak şekilde kaydır
-    angle += 90f;
+        // Rotasyon hesapla (90 derece offset ile)
+        float angle = Mathf.Atan2(direction_To_Mouse.y, direction_To_Mouse.x) * Mathf.Rad2Deg + 90f;
 
-    Player_Wand_Transform.rotation = Quaternion.Lerp(
-        Player_Wand_Transform.rotation,
-        Quaternion.Euler(0, 0, angle),
-        Wand_Rotation_Speed * Time.deltaTime
-    );
-
-    // Sprite yönünü düz tut
-    Vector3 scale = Player_Wand_Transform.localScale;
-    scale.x = 1f; // ters çevirmeye gerek yok
-    Player_Wand_Transform.localScale = scale;
-}
-
-
+        Player_Wand_Transform.rotation = Quaternion.Lerp(
+            Player_Wand_Transform.rotation,
+            Quaternion.Euler(0, 0, angle),
+            Wand_Rotation_Speed * Time.deltaTime
+        );
+    }
 
     private void Handle_Attack_Input()
     {
@@ -163,7 +175,14 @@ private void Update_Wand_Position_And_Rotation()
         Vector2 spawn_Position = Projectile_Spawn_Point.position;
         Vector2 direction = (Mouse_World_Position - spawn_Position).normalized;
 
-        projectile.transform.SetPositionAndRotation(spawn_Position, Quaternion.Euler(0, 0, Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg));
+        // Geçersiz yön kontrolü
+        if(float.IsNaN(direction.x) || float.IsNaN(direction.y))
+        {
+            direction = Vector2.right;
+        }
+
+        float rotation_Angle = Mathf.Atan2(direction.y, direction.x) * Mathf.Rad2Deg;
+        projectile.transform.SetPositionAndRotation(spawn_Position, Quaternion.Euler(0, 0, rotation_Angle));
         projectile.gameObject.SetActive(true);
         projectile.Launch(direction, Player_Projectile_Speed, Player_Projectile_Lifetime);
 
