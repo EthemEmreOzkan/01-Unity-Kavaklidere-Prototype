@@ -12,11 +12,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a2f316b5771931f4589ca65302f9b2c7, type: 3}
   m_Name: Player_Data_SO
   m_EditorClassIdentifier: Assembly-CSharp::Player_Data_SO
-  Player_Movement_Speed: 5
+  Player_Movement_Speed: 4
   Player_Acceleration_Rate: 10
   Player_Deceleration_Rate: 15
   Player_Dash_Speed: 100
-  Player_Dash_Distance: 10
+  Player_Dash_Distance: 5
   Player_Dash_Duration: 0.2
   Player_Dash_Cooldown: 1
   Player_Health: 100

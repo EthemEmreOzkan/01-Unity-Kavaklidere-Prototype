@@ -4,7 +4,7 @@ using System.Collections;
 public class Player_Movement : MonoBehaviour
 {
     //*-------------------------------------------------------------------------------------------------------*\\
-   
+
     #region Inspector Tab
 
     [Header("References ---------------------------------------------------------------------------------------")]
@@ -27,6 +27,10 @@ public class Player_Movement : MonoBehaviour
     [SerializeField] private float Player_Dash_Duration = 0.2f;
     [SerializeField] private float Player_Dash_Cooldown = 1f;
     [Space]
+    [Header("Recoil_Settings ----------------------------------------------------------------------------------")]
+    [Space]
+    [SerializeField] private float Recoil_Recovery_Speed = 10f;
+    [Space]
     [Header("Animation_Settings -------------------------------------------------------------------------------")]
     [Space]
     [SerializeField] private float Movement_Threshold = 0.1f;
@@ -40,7 +44,6 @@ public class Player_Movement : MonoBehaviour
     [Header("SO_Data_Save -------------------------------------------------------------------------------------")]
     [Space]
     [SerializeField] private KeyCode Save_Current_Data_To_SO = KeyCode.F5;
-
     #endregion
 
     //*-------------------------------------------------------------------------------------------------------*\\
@@ -62,6 +65,7 @@ public class Player_Movement : MonoBehaviour
     private Vector2 Target_Velocity;
     private Vector2 Dash_Direction;
     private Vector2 Last_Movement_Direction;
+    private Vector2 Recoil_Velocity;
     private float Dash_Cooldown_Timer;
 
     #endregion
@@ -72,60 +76,48 @@ public class Player_Movement : MonoBehaviour
 
     void Awake()
     {
-        if(Use_SO_Data) Update_SO_Data();
-        
-        if(Player_Rigidbody == null)
-        {
-            Player_Rigidbody = GetComponent<Rigidbody2D>();
-        }
+        if (Use_SO_Data) Update_SO_Data();
 
-        if(Player_Collider == null)
-        {
-            Player_Collider = GetComponent<Collider2D>();
-        }
-
-        if(Player_Animator_Manager == null)
-        {
-            Player_Animator_Manager = GetComponent<Player_Animator_Manager>();
-        }
+        Player_Rigidbody ??= GetComponent<Rigidbody2D>();
+        Player_Collider ??= GetComponent<Collider2D>();
+        Player_Animator_Manager ??= GetComponent<Player_Animator_Manager>();
 
         Last_Movement_Direction = Vector2.right;
     }
 
     void Update()
     {
-        float horizontal = Input.GetAxisRaw("Horizontal");
-        float vertical = Input.GetAxisRaw("Vertical");
-        
-        Movement_Input = new Vector2(horizontal, vertical);
-        
-        if(Input.GetKeyDown(KeyCode.Space))
-        {
-            Attempt_Dash();
-        }
+        Movement_Input = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
 
-        if(Input.GetKeyDown(Save_Current_Data_To_SO))
-        {
-            Save_Runtime_Data_To_SO();
-        }
-        
-        if(Dash_Cooldown_Timer > 0)
-        {
-            Dash_Cooldown_Timer -= Time.deltaTime;
-        }
-        
-        Current_Dash_Cooldown = Mathf.Max(0, Dash_Cooldown_Timer);
+        if (Input.GetKeyDown(KeyCode.Space)) Attempt_Dash();
+        if (Input.GetKeyDown(Save_Current_Data_To_SO)) Save_Runtime_Data_To_SO();
+
+        Dash_Cooldown_Timer = Mathf.Max(0, Dash_Cooldown_Timer - Time.deltaTime);
+        Current_Dash_Cooldown = Dash_Cooldown_Timer;
 
         Update_Animation_States();
         Update_Player_Direction();
+        Update_SO_Runtime_Values();
     }
 
     void FixedUpdate()
     {
-        if(!Is_Dashing)
+        if (!Is_Dashing)
         {
             Handle_Movement();
+            Handle_Recoil();
         }
+    }
+
+    #endregion
+
+    //*-------------------------------------------------------------------------------------------------------*\\
+
+    #region Public Methods
+
+    public void Apply_Recoil(Vector2 recoil_Force)
+    {
+        Recoil_Velocity += recoil_Force;
     }
 
     #endregion
@@ -147,9 +139,9 @@ public class Player_Movement : MonoBehaviour
 
     private void Save_Runtime_Data_To_SO()
     {
-        #if UNITY_EDITOR
+#if UNITY_EDITOR
         UnityEditor.Undo.RecordObject(Player_Data_SO, "Save Runtime Player Data");
-        #endif
+#endif
 
         Player_Data_SO.Player_Movement_Speed = Player_Movement_Speed;
         Player_Data_SO.Player_Dash_Speed = Player_Dash_Speed;
@@ -159,10 +151,10 @@ public class Player_Movement : MonoBehaviour
         Player_Data_SO.Player_Acceleration_Rate = Player_Acceleration_Rate;
         Player_Data_SO.Player_Deceleration_Rate = Player_Deceleration_Rate;
 
-        #if UNITY_EDITOR
+#if UNITY_EDITOR
         UnityEditor.EditorUtility.SetDirty(Player_Data_SO);
         UnityEditor.AssetDatabase.SaveAssets();
-        #endif
+#endif
 
         Debug.Log($"<color=green>Runtime data saved to SO: {Player_Data_SO.name}</color>");
     }
@@ -172,17 +164,22 @@ public class Player_Movement : MonoBehaviour
         Target_Velocity = Movement_Input.normalized * Player_Movement_Speed;
         float interpolation_Rate = Movement_Input.magnitude > 0.1f ? Player_Acceleration_Rate : Player_Deceleration_Rate;
         Current_Velocity = Vector2.Lerp(Current_Velocity, Target_Velocity, interpolation_Rate * Time.fixedDeltaTime);
-        Player_Rigidbody.linearVelocity = Current_Velocity;
+        Player_Rigidbody.linearVelocity = Current_Velocity + Recoil_Velocity;
+    }
+
+    private void Handle_Recoil()
+    {
+        Recoil_Velocity = Vector2.Lerp(Recoil_Velocity, Vector2.zero, Recoil_Recovery_Speed * Time.fixedDeltaTime);
     }
 
     private void Update_Animation_States()
     {
-        if(Player_Animator_Manager == null) return;
+        if (Player_Animator_Manager == null) return;
 
         bool was_Walking = Is_Walking;
         Is_Walking = Current_Velocity.magnitude > Movement_Threshold && !Is_Dashing;
 
-        if(was_Walking != Is_Walking)
+        if (was_Walking != Is_Walking)
         {
             Player_Animator_Manager.SetBool("Is_Walking", Is_Walking);
         }
@@ -190,34 +187,25 @@ public class Player_Movement : MonoBehaviour
 
     private void Update_Player_Direction()
     {
-        if(Movement_Input.magnitude > 0.1f)
-        {
-            Last_Movement_Direction = Movement_Input;
+        if (Movement_Input.magnitude <= 0.1f) return;
 
-            if(Movement_Input.x > 0)
-            {
-                transform.localScale = new Vector3(1, 1, 1);
-            }
-            else if(Movement_Input.x < 0)
-            {
-                transform.localScale = new Vector3(-1, 1, 1);
-            }
+        Last_Movement_Direction = Movement_Input;
+
+        if (Movement_Input.x > 0)
+        {
+            transform.localScale = new Vector3(1, 1, 1);
+        }
+        else if (Movement_Input.x < 0)
+        {
+            transform.localScale = new Vector3(-1, 1, 1);
         }
     }
 
     private void Attempt_Dash()
     {
-        if(Is_Dashing || Dash_Cooldown_Timer > 0) return;
-        
-        if(Movement_Input.magnitude > 0.1f)
-        {
-            Dash_Direction = Movement_Input.normalized;
-        }
-        else
-        {
-            Dash_Direction = Last_Movement_Direction.normalized;
-        }
-        
+        if (Is_Dashing || Dash_Cooldown_Timer > 0) return;
+
+        Dash_Direction = Movement_Input.magnitude > 0.1f ? Movement_Input.normalized : Last_Movement_Direction.normalized;
         StartCoroutine(Perform_Dash());
     }
 
@@ -225,47 +213,42 @@ public class Player_Movement : MonoBehaviour
     {
         Is_Dashing = true;
         Dash_Cooldown_Timer = Player_Dash_Cooldown;
-        
-        if(Player_Animator_Manager != null)
-        {
-            Player_Animator_Manager.SetBool("Is_Dashing", true);
-            Player_Animator_Manager.SetBool("Is_Walking", false);
-        }
-        
-        if(Player_Collider != null)
-        {
-            Player_Collider.enabled = false;
-        }
-        
+        Recoil_Velocity = Vector2.zero;
+
+        Player_Animator_Manager?.SetBool("Is_Dashing", true);
+        Player_Animator_Manager?.SetBool("Is_Walking", false);
+
+        if (Player_Collider != null) Player_Collider.enabled = false;
+
         float elapsed_Time = 0f;
         Vector2 start_Position = transform.position;
         Vector2 target_Position = start_Position + (Dash_Direction * Player_Dash_Distance);
-        
-        while(elapsed_Time < Player_Dash_Duration)
+
+        while (elapsed_Time < Player_Dash_Duration)
         {
             elapsed_Time += Time.deltaTime;
-            float progress = elapsed_Time / Player_Dash_Duration;
-            
-            Vector2 new_Position = Vector2.Lerp(start_Position, target_Position, progress);
-            Player_Rigidbody.MovePosition(new_Position);
-            
+            Player_Rigidbody.MovePosition(Vector2.Lerp(start_Position, target_Position, elapsed_Time / Player_Dash_Duration));
             yield return null;
         }
-        
+
         Player_Rigidbody.linearVelocity = Vector2.zero;
         Current_Velocity = Vector2.zero;
-        
-        if(Player_Collider != null)
-        {
-            Player_Collider.enabled = true;
-        }
-        
-        if(Player_Animator_Manager != null)
-        {
-            Player_Animator_Manager.SetBool("Is_Dashing", false);
-        }
-        
+
+        if (Player_Collider != null) Player_Collider.enabled = true;
+        Player_Animator_Manager?.SetBool("Is_Dashing", false);
+
         Is_Dashing = false;
+    }
+
+    private void Update_SO_Runtime_Values()
+    {
+        Player_Movement_Speed = Player_Data_SO.Player_Movement_Speed;
+        Player_Dash_Speed = Player_Data_SO.Player_Dash_Speed;
+        Player_Dash_Distance = Player_Data_SO.Player_Dash_Distance;
+        Player_Dash_Duration = Player_Data_SO.Player_Dash_Duration;
+        Player_Dash_Cooldown = Player_Data_SO.Player_Dash_Cooldown;
+        Player_Acceleration_Rate = Player_Data_SO.Player_Acceleration_Rate;
+        Player_Deceleration_Rate = Player_Data_SO.Player_Deceleration_Rate;
     }
 
     #endregion
@@ -277,14 +260,20 @@ public class Player_Movement : MonoBehaviour
     void OnDrawGizmos()
     {
         if (!Show_Debug_Gizmos || !Application.isPlaying) return;
-        
+
         Gizmos.color = Color.green;
         Gizmos.DrawRay(transform.position, Current_Velocity.normalized * 2f);
-        
+
         Gizmos.color = Color.blue;
         Gizmos.DrawRay(transform.position, (Vector3)Movement_Input * 1.5f);
-        
-        if(Is_Dashing)
+
+        if (Recoil_Velocity.magnitude > 0.1f)
+        {
+            Gizmos.color = Color.magenta;
+            Gizmos.DrawRay(transform.position, (Vector3)Recoil_Velocity * 2f);
+        }
+
+        if (Is_Dashing)
         {
             Gizmos.color = Color.red;
             Gizmos.DrawRay(transform.position, (Vector3)(Dash_Direction * Player_Dash_Distance));
@@ -292,6 +281,6 @@ public class Player_Movement : MonoBehaviour
     }
 
     #endregion
-    
+
     //*-----------------------------------------------------------------------------------------//
 }
